@@ -24,12 +24,27 @@ function mapMessageRow(row: Record<string, unknown>): ChatMessage {
   }
 }
 
+function parseSystemPromptColumn(raw: unknown): string[] {
+  if (raw == null || raw === '') return []
+  const s = String(raw)
+  try {
+    const o = JSON.parse(s) as { slots?: unknown }
+    if (o && Array.isArray(o.slots)) {
+      return o.slots.filter((x): x is string => typeof x === 'string')
+    }
+  } catch {
+    /* legacy plain text ignored */
+  }
+  return []
+}
+
 function mapConversationRow(row: Record<string, unknown>): Conversation {
   return {
     id: String(row.id),
     title: String(row.title),
     modelId: String(row.model_id),
     contextStrategy: row.context_strategy as Conversation['contextStrategy'],
+    systemSummarySlots: parseSystemPromptColumn(row.system_prompt),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }
@@ -39,7 +54,7 @@ export async function getConversation(id: string): Promise<Conversation | null> 
   const database = await getDb()
   if (!database) return null
   const rows = await database.select<Record<string, unknown>[]>(
-    'SELECT id, title, model_id, context_strategy, created_at, updated_at FROM conversations WHERE id = ?',
+    'SELECT id, title, model_id, system_prompt, context_strategy, created_at, updated_at FROM conversations WHERE id = ?',
     [id],
   )
   if (!rows[0]) return null
@@ -50,7 +65,7 @@ export async function listConversations(): Promise<Conversation[]> {
   const database = await getDb()
   if (!database) return []
   const rows = await database.select<Record<string, unknown>[]>(
-    'SELECT id, title, model_id, context_strategy, created_at, updated_at FROM conversations ORDER BY updated_at DESC',
+    'SELECT id, title, model_id, system_prompt, context_strategy, created_at, updated_at FROM conversations ORDER BY updated_at DESC',
   )
   return rows.map(mapConversationRow)
 }
@@ -58,19 +73,21 @@ export async function listConversations(): Promise<Conversation[]> {
 export async function upsertConversation(conversation: Conversation): Promise<void> {
   const database = await getDb()
   if (!database) return
+  const systemPromptJson = JSON.stringify({ slots: conversation.systemSummarySlots ?? [] })
   await database.execute(
     `INSERT INTO conversations (id, title, model_id, system_prompt, context_strategy, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        title = excluded.title,
        model_id = excluded.model_id,
+       system_prompt = excluded.system_prompt,
        context_strategy = excluded.context_strategy,
        updated_at = excluded.updated_at`,
     [
       conversation.id,
       conversation.title,
       conversation.modelId,
-      '',
+      systemPromptJson,
       conversation.contextStrategy,
       conversation.createdAt,
       conversation.updatedAt,

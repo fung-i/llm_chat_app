@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../types'
+import { buildInContextMessagesForApi } from './mergeSystem'
 
 export interface StreamChunk {
   type: 'delta' | 'done' | 'error'
@@ -45,6 +46,7 @@ export function debugSidecarUrlContext(): {
 export async function streamChat(params: {
   conversationId: string
   messages: ChatMessage[]
+  systemSummarySlots: string[]
   modelId: string
   apiKeys: Record<string, string>
   contextStrategy: string
@@ -53,15 +55,14 @@ export async function streamChat(params: {
   maxTokens: number
   onChunk: (chunk: StreamChunk) => void
 }): Promise<void> {
+  const merged = buildInContextMessagesForApi(params.messages, params.systemSummarySlots)
   const payload = {
     conversationId: params.conversationId,
     modelId: params.modelId,
-    messages: params.messages
-      .filter((message) => message.inContext)
-      .map((message) => ({
-        role: message.role,
-        content: message.contextContent,
-      })),
+    messages: merged.map((message) => ({
+      role: message.role,
+      content: message.contextContent,
+    })),
     apiKeys: params.apiKeys,
     contextStrategy: params.contextStrategy,
     contextWindow: params.contextWindow,

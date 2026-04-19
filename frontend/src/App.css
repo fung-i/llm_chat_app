@@ -164,8 +164,9 @@
   border: 1px solid #1f2937;
   border-radius: 12px;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto 1fr auto;
   min-height: 0;
+  min-width: 0;
 }
 
 .paneHeader {
@@ -221,6 +222,11 @@
   padding: 12px;
   display: grid;
   gap: 10px;
+  min-width: 0;
+}
+
+.messageList > * {
+  min-width: 0;
 }
 
 .messageCard {
@@ -228,6 +234,8 @@
   background: #0f172a;
   border-radius: 10px;
   padding: 10px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .messageMeta {
@@ -248,10 +256,74 @@
   font-size: 14px;
   line-height: 1.5;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .messageRemoved {
   opacity: 0.5;
+}
+
+.messageSelected {
+  outline: 2px solid #38bdf8;
+  outline-offset: -2px;
+  background: #0c1c33;
+}
+
+.collapseToggle {
+  background: transparent;
+  border: none;
+  color: #38bdf8;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.messagePreview {
+  position: relative;
+  -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent);
+  mask-image: linear-gradient(180deg, #000 60%, transparent);
+}
+
+.messageMetaActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.messageActionBtn {
+  border: 1px solid #334155;
+  background: #111827;
+  color: #d1d5db;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.messageActionBtn:hover {
+  background: #1f2937;
+}
+
+.restoreBtn {
+  color: #38bdf8;
+  border-color: #1e3a5f;
+}
+
+.deleteBtn {
+  color: #f87171;
+  border-color: #4c1d1d;
+}
+
+.deleteBtn:hover {
+  background: #2a0f0f;
+}
+
+.ghostButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .contextCard textarea {
@@ -275,6 +347,64 @@
   border-radius: 6px;
   padding: 4px 8px;
   cursor: pointer;
+}
+
+.systemStrip {
+  padding: 0 12px 10px;
+  border-bottom: 1px solid #1f2937;
+}
+
+.systemStripHint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.45;
+}
+
+.systemColumns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.systemColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  border-radius: 8px;
+  padding: 4px;
+  margin: -4px;
+}
+
+.systemColumnHead {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.systemColumn textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px;
+  background: #0b1220;
+  color: #e5e7eb;
+  box-sizing: border-box;
+  font-size: 13px;
+}
+
+.summaryPick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: inherit;
+}
+
+.summaryPick input {
+  margin: 0;
 }
 
 .customActions {

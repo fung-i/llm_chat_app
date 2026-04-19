@@ -1,6 +1,6 @@
 import { listen } from '@tauri-apps/api/event'
-import { useEffect, useState } from 'react'
-import { ConversationPane } from './components/ConversationPane'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ConversationPane, type PaneHandle } from './components/ConversationPane'
 import { ContextPane } from './components/ContextPane'
 import { MessageInput } from './components/MessageInput'
 import { ModelSelector } from './components/ModelSelector'
@@ -13,6 +13,9 @@ import './App.css'
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
+  const convPaneRef = useRef<PaneHandle>(null)
+  const ctxPaneRef = useRef<PaneHandle>(null)
   const conversation = useChatStore((state) => state.conversation)
   const selectedModelId = useChatStore((state) => state.selectedModelId)
   const messages = useChatStore((state) => state.messages)
@@ -25,13 +28,18 @@ function App() {
   const addUserMessage = useChatStore((state) => state.addUserMessage)
   const removeFromContext = useChatStore((state) => state.removeFromContext)
   const restoreToContext = useChatStore((state) => state.restoreToContext)
+  const deleteMessage = useChatStore((state) => state.deleteMessage)
   const editContextContent = useChatStore((state) => state.editContextContent)
   const addCustomContextMessage = useChatStore((state) => state.addCustomContextMessage)
   const persistThread = useChatStore((state) => state.persistThread)
-  const summarizeToContext = useChatStore((state) => state.summarizeToContext)
+  const updateSystemSummarySlot = useChatStore((state) => state.updateSystemSummarySlot)
+  const summarizeWithScope = useChatStore((state) => state.summarizeWithScope)
   const sendToModel = useChatStore((state) => state.sendToModel)
   const hydrateConversation = useChatStore((state) => state.hydrateConversation)
   const startNewConversation = useChatStore((state) => state.startNewConversation)
+  const pushHistorySnapshot = useChatStore((state) => state.pushHistorySnapshot)
+  const undo = useChatStore((state) => state.undo)
+  const historyDepth = useChatStore((state) => state.history.length)
 
   const conversations = useConversationListStore((state) => state.items)
   const loadConversations = useConversationListStore((state) => state.load)
@@ -83,8 +91,35 @@ function App() {
   }
 
   const handleSelectConversation = async (id: string) => {
+    setSelectedMessageId(null)
     await hydrateConversation(id)
   }
+
+  const handleConvTopChange = useCallback((id: string) => {
+    ctxPaneRef.current?.scrollToMessage(id)
+  }, [])
+
+  const handleCtxTopChange = useCallback((id: string) => {
+    convPaneRef.current?.scrollToMessage(id)
+  }, [])
+
+  const handleSelectFromConv = useCallback((id: string) => {
+    setSelectedMessageId(id)
+    ctxPaneRef.current?.scrollToMessage(id, { smooth: true })
+  }, [])
+
+  const handleSelectFromCtx = useCallback((id: string) => {
+    setSelectedMessageId(id)
+    convPaneRef.current?.scrollToMessage(id, { smooth: true })
+  }, [])
+
+  const handleDeleteMessage = useCallback(
+    (id: string) => {
+      if (selectedMessageId === id) setSelectedMessageId(null)
+      deleteMessage(id)
+    },
+    [deleteMessage, selectedMessageId],
+  )
 
   const handleDeleteConversation = async (id: string) => {
     const activeId = useChatStore.getState().conversation.id
@@ -129,6 +164,15 @@ function App() {
               </select>
             </label>
             <ModelSelector value={selectedModelId} onChange={setSelectedModel} />
+            <button
+              type="button"
+              className="ghostButton"
+              disabled={historyDepth === 0 || isStreaming}
+              onClick={() => undo()}
+              title="撤回上一次移除/摘要/修改/添加/删除"
+            >
+              撤回 {historyDepth > 0 ? `(${historyDepth})` : ''}
+            </button>
             <button type="button" className="ghostButton" onClick={() => setSettingsOpen(true)}>
               密钥与参数
             </button>
@@ -136,16 +180,30 @@ function App() {
         </header>
 
         <section className="twoPane">
-          <ConversationPane messages={messages} />
-          <ContextPane
+          <ConversationPane
+            ref={convPaneRef}
             messages={messages}
-            maxContextWindow={maxContextWindow}
-            onRemove={removeFromContext}
+            selectedMessageId={selectedMessageId}
+            onSelectMessage={handleSelectFromConv}
+            onTopMessageChange={handleConvTopChange}
             onRestore={restoreToContext}
+            onDelete={handleDeleteMessage}
+          />
+          <ContextPane
+            ref={ctxPaneRef}
+            messages={messages}
+            systemSummarySlots={conversation.systemSummarySlots}
+            maxContextWindow={maxContextWindow}
+            selectedMessageId={selectedMessageId}
+            onSelectMessage={handleSelectFromCtx}
+            onTopMessageChange={handleCtxTopChange}
+            onRemove={removeFromContext}
             onEdit={editContextContent}
             onAddCustom={addCustomContextMessage}
+            onUpdateSummarySlot={updateSystemSummarySlot}
             onPersist={() => void persistThread()}
-            onSummarize={() => summarizeToContext()}
+            onBeforeEdit={pushHistorySnapshot}
+            onSummarizeScope={(scope, selectedIds) => summarizeWithScope(scope, selectedIds)}
           />
         </section>
 

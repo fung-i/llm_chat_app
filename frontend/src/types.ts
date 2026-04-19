@@ -15,6 +15,8 @@ export interface Conversation {
   title: string
   modelId: string
   contextStrategy: 'auto_trim' | 'manual' | 'summarize'
+  /** 摘要产生的多段内容，发送时与首条 system 合并 */
+  systemSummarySlots: string[]
   createdAt: number
   updatedAt: number
 }

@@ -34,8 +34,9 @@ async function getStore() {
       try {
         client = await v.loadClient(CLIENT)
       } catch {
-        await v.createClient(CLIENT)
-        client = await v.loadClient(CLIENT)
+        // createClient 本身就会注册并返回 client；再调用 loadClient 会报
+        // "client with id ... has already been loaded before, can not be loaded twice"
+        client = await v.createClient(CLIENT)
       }
       return { store: client.getStore(), vault: v }
     })().catch((e) => {

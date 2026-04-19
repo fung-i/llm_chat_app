@@ -6,6 +6,14 @@ import type { ChatMessage, Conversation, MessageRole } from '../types'
 import { useModelStore } from './modelStore'
 import { useConversationListStore } from './conversationListStore'
 
+interface HistoryEntry {
+  messages: ChatMessage[]
+  systemSummarySlots: string[]
+  label: string
+}
+
+const HISTORY_LIMIT = 50
+
 interface ChatState {
   conversation: Conversation
   selectedModelId: string
@@ -13,19 +21,24 @@ interface ChatState {
   isStreaming: boolean
   inputText: string
   error: string | null
+  history: HistoryEntry[]
   setInputText: (value: string) => void
   setSelectedModel: (modelId: string) => void
   setContextStrategy: (strategy: Conversation['contextStrategy']) => void
   addUserMessage: (content: string) => void
   removeFromContext: (messageId: string) => void
   restoreToContext: (messageId: string) => void
+  deleteMessage: (messageId: string) => void
   editContextContent: (messageId: string, content: string) => void
   addCustomContextMessage: (role: MessageRole, content: string) => void
   persistThread: () => Promise<void>
   hydrateConversation: (conversationId: string) => Promise<void>
   startNewConversation: () => Promise<void>
-  summarizeToContext: () => Promise<void>
+  updateSystemSummarySlot: (index: number, text: string) => void
+  summarizeWithScope: (scope: 'selected' | 'full', selectedIds: string[]) => Promise<void>
   sendToModel: () => Promise<void>
+  pushHistorySnapshot: (label: string) => void
+  undo: () => void
 }
 
 function newId(prefix: string): string {
@@ -52,6 +65,7 @@ function newConversation(): Conversation {
     title: '新会话',
     modelId: 'gpt-4o-mini',
     contextStrategy: 'manual',
+    systemSummarySlots: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   }
@@ -64,6 +78,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   inputText: '',
   error: null,
+  history: [],
+
+  pushHistorySnapshot: (label) => {
+    const { messages, conversation, history } = get()
+    const next = [
+      ...history,
+      {
+        messages: messages.map((m) => ({ ...m })),
+        systemSummarySlots: [...conversation.systemSummarySlots],
+        label,
+      },
+    ]
+    if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT)
+    set({ history: next })
+  },
+
+  undo: () => {
+    const { history, isStreaming } = get()
+    if (isStreaming || history.length === 0) return
+    const next = history.slice(0, -1)
+    const snap = history[history.length - 1]
+    set((state) => ({
+      history: next,
+      messages: snap.messages.map((m) => ({ ...m })),
+      conversation: {
+        ...state.conversation,
+        systemSummarySlots: [...snap.systemSummarySlots],
+        updatedAt: Date.now(),
+      },
+      error: null,
+    }))
+    void get().persistThread()
+  },
 
   setInputText: (value) => set({ inputText: value }),
 
@@ -105,6 +152,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   removeFromContext: (messageId) => {
+    get().pushHistorySnapshot('移除消息')
     set((state) => ({
       messages: state.messages.map((message) =>
         message.id === messageId ? { ...message, inContext: false } : message,
@@ -114,10 +162,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   restoreToContext: (messageId) => {
+    get().pushHistorySnapshot('加回上下文')
     set((state) => ({
       messages: state.messages.map((message) =>
         message.id === messageId ? { ...message, inContext: true } : message,
       ),
+    }))
+    void get().persistThread()
+  },
+
+  deleteMessage: (messageId) => {
+    get().pushHistorySnapshot('删除消息')
+    set((state) => ({
+      messages: state.messages.filter((message) => message.id !== messageId),
     }))
     void get().persistThread()
   },
@@ -136,6 +193,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })),
 
   addCustomContextMessage: (role, content) => {
+    get().pushHistorySnapshot('添加消息')
     const customMessage: ChatMessage = {
       id: newId('m'),
       role,
@@ -163,9 +221,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!meta) return
     const rows = await listMessages(conversationId)
     set({
-      conversation: meta,
+      conversation: {
+        ...meta,
+        systemSummarySlots: meta.systemSummarySlots ?? [],
+      },
       selectedModelId: meta.modelId,
       messages: rows.length > 0 ? rows : seedMessages(),
+      history: [],
+      error: null,
     })
   },
 
@@ -175,33 +238,85 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversation,
       selectedModelId: conversation.modelId,
       messages: seedMessages(),
+      history: [],
       error: null,
     })
     await upsertConversation(conversation)
     await useConversationListStore.getState().load()
   },
 
-  summarizeToContext: async () => {
+  updateSystemSummarySlot: (index, text) => {
+    set((state) => {
+      const slots = [...state.conversation.systemSummarySlots]
+      slots[index] = text
+      return {
+        conversation: {
+          ...state.conversation,
+          systemSummarySlots: slots,
+          updatedAt: Date.now(),
+        },
+      }
+    })
+  },
+
+  summarizeWithScope: async (scope, selectedIds) => {
     const { messages, selectedModelId } = get()
     const modelStore = useModelStore.getState()
-    const payload = messages
-      .filter((message) => message.inContext)
-      .map((message) => ({ role: message.role, contextContent: message.contextContent }))
-    const summary = await summarizeRemote({
-      messages: payload,
-      apiKeys: modelStore.apiKeys,
-      modelId: selectedModelId,
-    })
-    const summaryMessage: ChatMessage = {
-      id: newId('m'),
-      role: 'assistant',
-      displayContent: `[摘要] ${summary}`,
-      contextContent: summary,
-      inContext: true,
-      isContextModified: true,
-      createdAt: Date.now(),
+
+    let ordered: typeof messages
+    if (scope === 'full') {
+      ordered = [...messages].sort((a, b) => a.createdAt - b.createdAt)
+    } else {
+      const set = new Set(selectedIds)
+      ordered = [...messages].filter((m) => set.has(m.id)).sort((a, b) => a.createdAt - b.createdAt)
     }
-    set((state) => ({ messages: [...state.messages, summaryMessage] }))
+
+    if (ordered.length === 0) {
+      set({ error: scope === 'selected' ? '请勾选至少一条消息。' : '没有可摘要的消息。' })
+      return
+    }
+
+    const payload = ordered.map((message) => ({
+      role: message.role,
+      contextContent: message.contextContent,
+    }))
+
+    let summary: string
+    try {
+      summary = await summarizeRemote({
+        messages: payload,
+        apiKeys: modelStore.apiKeys,
+        modelId: selectedModelId,
+      })
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : '摘要失败。',
+      })
+      return
+    }
+
+    const first = messages[0]
+    const keepFirstSystem = first?.role === 'system'
+
+    get().pushHistorySnapshot('摘要')
+
+    set((state) => {
+      const sourceIds = new Set(ordered.map((m) => m.id))
+      const nextMessages = state.messages.map((m) => {
+        if (!sourceIds.has(m.id)) return m
+        if (keepFirstSystem && m.id === first?.id && m.role === 'system') return m
+        return { ...m, inContext: false }
+      })
+      return {
+        messages: nextMessages,
+        conversation: {
+          ...state.conversation,
+          systemSummarySlots: [...state.conversation.systemSummarySlots, summary],
+          updatedAt: Date.now(),
+        },
+        error: null,
+      }
+    })
     await get().persistThread()
   },
 
@@ -236,6 +351,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await streamChat({
         conversationId: conversation.id,
         messages,
+        systemSummarySlots: conversation.systemSummarySlots,
         modelId: selectedModelId,
         apiKeys: modelStore.apiKeys,
         contextStrategy: conversation.contextStrategy,
