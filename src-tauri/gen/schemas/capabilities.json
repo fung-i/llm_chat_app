@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Main window: SQL, Stronghold, shell sidecar","local":true,"windows":["main"],"permissions":["core:default","core:event:default","sql:default","sql:allow-execute","stronghold:default","shell:allow-spawn"]}}

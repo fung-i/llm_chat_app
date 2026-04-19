@@ -1,0 +1,21 @@
+{
+  "name": "llm_chat_app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Desktop LLM chat app workspace",
+  "workspaces": [
+    "frontend",
+    "sidecar"
+  ],
+  "scripts": {
+    "dev:web": "npm --prefix frontend run dev",
+    "dev:sidecar": "npm --prefix sidecar run dev",
+    "build:web": "npm --prefix frontend run build",
+    "build:sidecar": "npm --prefix sidecar run build",
+    "build:desktop": "npm run build:sidecar && npm run build:web"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module"
+}

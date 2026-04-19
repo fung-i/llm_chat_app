@@ -1,0 +1,9 @@
+node_modules
+frontend/node_modules
+sidecar/node_modules
+frontend/dist
+sidecar/dist
+sidecar/dist-check
+sidecar/dist-bundle
+src-tauri/target
+*.log

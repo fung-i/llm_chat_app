@@ -1,0 +1,82 @@
+[
+  {
+    "id": "gpt-4o-mini",
+    "name": "GPT-4o mini",
+    "provider": "openai",
+    "adapter": "openai",
+    "baseUrl": "https://api.openai.com/v1",
+    "contextWindow": 128000
+  },
+  {
+    "id": "gpt-4o",
+    "name": "GPT-4o",
+    "provider": "openai",
+    "adapter": "openai",
+    "baseUrl": "https://api.openai.com/v1",
+    "contextWindow": 128000
+  },
+  {
+    "id": "claude-3-7-sonnet",
+    "name": "Claude 3.7 Sonnet",
+    "provider": "anthropic",
+    "adapter": "anthropic",
+    "apiModel": "claude-3-5-sonnet-20241022",
+    "contextWindow": 200000
+  },
+  {
+    "id": "gemini-2.5-pro",
+    "name": "Gemini 2.5 Pro",
+    "provider": "google",
+    "adapter": "gemini",
+    "apiModel": "gemini-2.0-flash",
+    "contextWindow": 1000000
+  },
+  {
+    "id": "qwen-max",
+    "name": "Qwen Max",
+    "provider": "qwen",
+    "adapter": "openai",
+    "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "contextWindow": 32000
+  },
+  {
+    "id": "doubao-pro",
+    "name": "Doubao Pro",
+    "provider": "doubao",
+    "adapter": "openai",
+    "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+    "contextWindow": 128000
+  },
+  {
+    "id": "kimi-latest",
+    "name": "Kimi Latest",
+    "provider": "kimi",
+    "adapter": "openai",
+    "baseUrl": "https://api.moonshot.cn/v1",
+    "contextWindow": 128000
+  },
+  {
+    "id": "glm-4",
+    "name": "GLM-4",
+    "provider": "glm",
+    "adapter": "glm",
+    "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+    "contextWindow": 128000
+  },
+  {
+    "id": "deepseek-chat",
+    "name": "DeepSeek Chat",
+    "provider": "deepseek",
+    "adapter": "openai",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "contextWindow": 128000
+  },
+  {
+    "id": "deepseek-reasoner",
+    "name": "DeepSeek Reasoner (R1)",
+    "provider": "deepseek",
+    "adapter": "openai",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "contextWindow": 128000
+  }
+]
