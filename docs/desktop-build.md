@@ -71,6 +71,25 @@ npm run build:desktop
 
 更省时的做法是：**只** `npm run build:sidecar`，然后 `cargo tauri build`（前端仅由 Tauri 构建一次）。
 
+## Windows 包：通过 GitHub Actions 构建（推荐）
+
+本仓库自带 `.github/workflows/release.yml`，使用 `macos-latest` + `windows-latest` 两个 runner **并行**打出 macOS 与 Windows 安装包：
+
+- **触发方式**
+  - 手动：Actions 标签页选 `build-desktop` → `Run workflow`，产物会作为 workflow artifact 上传。
+  - 打 tag（如 `git tag v0.1.0 && git push --tags`）：会创建 / 更新一个 **draft GitHub Release**，把两个平台的 `.dmg` / `.app.tar.gz` / `.msi` / `.exe` 等都挂上去。
+
+- **每个 runner 做的事情**（脚本无需改动）：
+  1. `npm ci`（含 workspaces）
+  2. `npm run build:sidecar`：脚本按本机 triple 自动生成 `llm-sidecar-<triple>[.exe]`，与 `tauri.conf.json` 的 `externalBin` 对得上。
+  3. `tauri-apps/tauri-action`：内部跑 `vite build` → `cargo tauri build`，并上传产物。
+
+- **macOS 上仍然不能使用 Bun 1.3.12**（详见 [macos-sidecar-bun.md](./macos-sidecar-bun.md)），workflow 已经把 Bun 版本 pin 在 `1.3.11`。
+
+- **Intel Mac 用户**：当前只在 `macos-latest`（Apple Silicon）上构建。需要 Intel `.dmg` 时，在 matrix 里再加一个 `macos-13` job 即可，无需改其它脚本。
+
+- **代码签名**（可选）：默认产物**未签名**——Windows 首次安装会触发 SmartScreen，macOS 会提示"未识别的开发者"。正式分发请按 Apple Developer / Windows OV/EV 证书流程在 workflow 里加签名步骤。
+
 ## 交叉编译与多架构（简要）
 
 为本机构建时，`npm run build:sidecar` 默认按 **当前机器的 `arch` + 系统** 生成三元组。

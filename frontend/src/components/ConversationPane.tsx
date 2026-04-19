@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import type { ChatMessage } from '../types'
+import { MessageContent } from './MessageContent'
 
 const COLLAPSE_LINE_THRESHOLD = 12
 const COLLAPSE_CHAR_THRESHOLD = 600
@@ -139,9 +140,11 @@ export const ConversationPane = forwardRef<PaneHandle, ConversationPaneProps>(fu
           const collapsible = !isLast && shouldCollapse(message.displayContent)
           const isExpanded = expanded[message.id] ?? !collapsible
           const isSelected = message.id === selectedMessageId
-          const showText = isExpanded || !collapsible
+          const fullyShown = isExpanded || !collapsible
+          const showText = fullyShown
             ? message.displayContent || '...'
             : previewContent(message.displayContent)
+          const renderMarkdown = fullyShown && message.role !== 'user'
 
           return (
             <article
@@ -200,7 +203,11 @@ export const ConversationPane = forwardRef<PaneHandle, ConversationPaneProps>(fu
                   </button>
                 </div>
               </div>
-              <p className={isExpanded || !collapsible ? '' : 'messagePreview'}>{showText}</p>
+              {renderMarkdown ? (
+                <MessageContent text={showText} streamSafe={isLast} />
+              ) : (
+                <p className={fullyShown ? '' : 'messagePreview'}>{showText}</p>
+              )}
             </article>
           )
         })}

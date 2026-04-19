@@ -11,6 +11,7 @@ import type { ChatMessage, MessageRole } from '../types'
 import { countTokensRemote } from '../lib/sidecarClient'
 import { buildInContextMessagesForApi } from '../lib/mergeSystem'
 import type { PaneHandle } from './ConversationPane'
+import { MessageContent } from './MessageContent'
 
 interface ContextPaneProps {
   messages: ChatMessage[]
@@ -60,6 +61,9 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
   const [pickForSummary, setPickForSummary] = useState<Record<string, boolean>>({})
   const [remoteTokens, setRemoteTokens] = useState<number | null>(null)
   const [summarizing, setSummarizing] = useState(false)
+  const [editingMap, setEditingMap] = useState<Record<string, boolean>>({})
+
+  const isEditing = (m: ChatMessage) => editingMap[m.id] ?? m.role === 'user'
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map())
@@ -263,6 +267,7 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
       <div className="messageList" ref={listRef} onScroll={handleScroll}>
         {restMessages.map((message) => {
           const isSelected = message.id === selectedMessageId
+          const editing = isEditing(message)
           return (
             <article
               key={message.id}
@@ -285,25 +290,42 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
                   />
                   <strong>{message.role}</strong>
                 </label>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onRemove(message.id)
-                  }}
-                >
-                  移除
-                </button>
+                <div className="messageMetaActions">
+                  <button
+                    type="button"
+                    className="messageActionBtn"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setEditingMap((prev) => ({ ...prev, [message.id]: !editing }))
+                    }}
+                  >
+                    {editing ? '预览' : '编辑'}
+                  </button>
+                  <button
+                    type="button"
+                    className="messageActionBtn deleteBtn"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRemove(message.id)
+                    }}
+                  >
+                    移除
+                  </button>
+                </div>
               </div>
-              <textarea
-                value={message.contextContent}
-                onFocus={() => {
-                  onSelectMessage(message.id)
-                  onBeforeEdit('编辑消息')
-                }}
-                onChange={(event) => onEdit(message.id, event.target.value)}
-                onBlur={onPersist}
-              />
+              {editing ? (
+                <textarea
+                  value={message.contextContent}
+                  onFocus={() => {
+                    onSelectMessage(message.id)
+                    onBeforeEdit('编辑消息')
+                  }}
+                  onChange={(event) => onEdit(message.id, event.target.value)}
+                  onBlur={onPersist}
+                />
+              ) : (
+                <MessageContent text={message.contextContent} streamSafe={false} />
+              )}
             </article>
           )
         })}
