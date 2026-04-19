@@ -6,7 +6,7 @@ import { streamOpenAICompatible } from '../adapters/openaiCompatible'
 import { getProvider, listProviders, resolveApiKey } from '../adapters/registry'
 import { applyContextStrategy } from '../services/contextManager'
 import { countMessagesTokens } from '../services/tokenCounter'
-import type { ChatMessageDto, StreamRequestBody } from '../types'
+import type { ChatMessageDto, ProviderRow, StreamRequestBody } from '../types'
 
 async function collectStreamText(iterator: AsyncGenerator<string>): Promise<string> {
   let out = ''
@@ -19,6 +19,78 @@ async function collectStreamText(iterator: AsyncGenerator<string>): Promise<stri
 function sse(controller: ReadableStreamDefaultController<Uint8Array>, payload: unknown) {
   const line = typeof payload === 'string' ? payload : JSON.stringify(payload)
   controller.enqueue(new TextEncoder().encode(`data: ${line}\n\n`))
+}
+
+const VALID_ADAPTERS: ProviderRow['adapter'][] = ['openai', 'anthropic', 'gemini', 'glm']
+
+/**
+ * Validate a provider override payload and return a sanitized ProviderRow,
+ * or an error message describing what is missing. Safer than trusting the
+ * client blindly, especially for required `baseUrl` fields.
+ */
+function normalizeProviderOverride(
+  input: unknown,
+): { row: ProviderRow } | { error: string } {
+  if (!input || typeof input !== 'object') return { error: 'providerOverride must be an object.' }
+  const candidate = input as Partial<ProviderRow>
+  if (!candidate.id || typeof candidate.id !== 'string') return { error: 'providerOverride.id is required.' }
+  if (!candidate.name || typeof candidate.name !== 'string') return { error: 'providerOverride.name is required.' }
+  if (!candidate.provider || typeof candidate.provider !== 'string') {
+    return { error: 'providerOverride.provider is required.' }
+  }
+  if (!candidate.adapter || !VALID_ADAPTERS.includes(candidate.adapter)) {
+    return { error: 'providerOverride.adapter must be one of openai | anthropic | gemini | glm.' }
+  }
+  if ((candidate.adapter === 'openai' || candidate.adapter === 'glm') && !candidate.baseUrl) {
+    return { error: 'providerOverride.baseUrl is required for openai/glm adapters.' }
+  }
+  const ctx = typeof candidate.contextWindow === 'number' && candidate.contextWindow > 0
+    ? candidate.contextWindow
+    : 32000
+  return {
+    row: {
+      id: candidate.id,
+      name: candidate.name,
+      provider: candidate.provider,
+      adapter: candidate.adapter,
+      baseUrl: candidate.baseUrl,
+      apiModel: candidate.apiModel,
+      contextWindow: ctx,
+    },
+  }
+}
+
+function resolveRow(
+  body: { modelId?: string; providerOverride?: unknown },
+): { row: ProviderRow } | { error: string; status: 400 } {
+  if (body.providerOverride) {
+    const result = normalizeProviderOverride(body.providerOverride)
+    if ('error' in result) return { error: result.error, status: 400 }
+    return { row: result.row }
+  }
+  if (!body.modelId) return { error: 'modelId is required.', status: 400 }
+  const row = getProvider(body.modelId)
+  if (!row) return { error: `Unknown modelId: ${body.modelId}`, status: 400 }
+  return { row }
+}
+
+function runAdapter(
+  row: ProviderRow,
+  apiKey: string,
+  apiModel: string,
+  prepared: ChatMessageDto[],
+  opts: { temperature?: number; maxTokens?: number },
+): AsyncGenerator<string> {
+  if (row.adapter === 'openai') {
+    return streamOpenAICompatible(row.baseUrl!, apiKey, apiModel, prepared, opts)
+  }
+  if (row.adapter === 'anthropic') {
+    return streamAnthropic(apiKey, apiModel, prepared, opts)
+  }
+  if (row.adapter === 'gemini') {
+    return streamGemini(apiKey, apiModel, prepared, opts)
+  }
+  return streamGlm(row.baseUrl!, apiKey, apiModel, prepared, opts)
 }
 
 export const chatApp = new Hono()
@@ -38,15 +110,12 @@ chatApp.post('/summarize', async (c) => {
     messages: ChatMessageDto[]
     apiKeys?: Record<string, string>
     modelId?: string
+    providerOverride?: ProviderRow
   }>()
-  const modelId = body.modelId
-  if (!modelId) {
-    return c.json({ error: 'modelId is required for summarization.' }, 400)
-  }
-  const row = getProvider(modelId)
-  if (!row) {
-    return c.json({ error: `Unknown modelId: ${modelId}` }, 400)
-  }
+  const resolved = resolveRow(body)
+  if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status)
+  const row = resolved.row
+
   const apiKey = resolveApiKey(row.provider, body.apiKeys)
   if (!apiKey) {
     return c.json({ error: `Missing API key for provider "${row.provider}" (summarization).` }, 401)
@@ -67,16 +136,7 @@ chatApp.post('/summarize', async (c) => {
   const opts = { temperature: 0.3, maxTokens: 1024 }
 
   try {
-    let iterator: AsyncGenerator<string>
-    if (row.adapter === 'openai') {
-      iterator = streamOpenAICompatible(row.baseUrl!, apiKey, apiModel, prepared, opts)
-    } else if (row.adapter === 'anthropic') {
-      iterator = streamAnthropic(apiKey, apiModel, prepared, opts)
-    } else if (row.adapter === 'gemini') {
-      iterator = streamGemini(apiKey, apiModel, prepared, opts)
-    } else {
-      iterator = streamGlm(row.baseUrl!, apiKey, apiModel, prepared, opts)
-    }
+    const iterator = runAdapter(row, apiKey, apiModel, prepared, opts)
     const summary = await collectStreamText(iterator)
     return c.json({ summary })
   } catch (error) {
@@ -85,12 +145,51 @@ chatApp.post('/summarize', async (c) => {
   }
 })
 
+/**
+ * Ping a provider with a minimal prompt to verify that the supplied
+ * credentials and base URL reach the upstream endpoint. Returns the first
+ * few tokens received on success.
+ */
+chatApp.post('/providers/test', async (c) => {
+  const body = await c.req.json<{
+    providerOverride?: ProviderRow
+    modelId?: string
+    apiKey?: string
+  }>()
+  const resolved = resolveRow(body)
+  if ('error' in resolved) return c.json({ ok: false, error: resolved.error }, resolved.status)
+  const row = resolved.row
+
+  const apiKey = body.apiKey?.trim() ?? ''
+  if (!apiKey) return c.json({ ok: false, error: 'apiKey is required for test.' }, 400)
+
+  const apiModel = row.apiModel ?? row.id
+  const prepared: ChatMessageDto[] = [
+    { role: 'user', content: 'Reply with the single word: pong.' },
+  ]
+
+  try {
+    const iterator = runAdapter(row, apiKey, apiModel, prepared, {
+      temperature: 0,
+      maxTokens: 16,
+    })
+    let received = ''
+    for await (const chunk of iterator) {
+      received += chunk
+      if (received.length >= 32) break
+    }
+    return c.json({ ok: true, sample: received.trim() })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return c.json({ ok: false, error: message }, 502)
+  }
+})
+
 chatApp.post('/chat/stream', async (c) => {
   const body = await c.req.json<StreamRequestBody>()
-  const row = getProvider(body.modelId)
-  if (!row) {
-    return c.json({ error: `Unknown modelId: ${body.modelId}` }, 400)
-  }
+  const resolved = resolveRow(body)
+  if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status)
+  const row = resolved.row
 
   const apiKey = resolveApiKey(row.provider, body.apiKeys)
   if (!apiKey) {
@@ -106,16 +205,7 @@ chatApp.post('/chat/stream', async (c) => {
     async start(controller) {
       try {
         const opts = { temperature: body.temperature, maxTokens: body.maxTokens }
-        let iterator: AsyncGenerator<string>
-        if (row.adapter === 'openai') {
-          iterator = streamOpenAICompatible(row.baseUrl!, apiKey, apiModel, prepared, opts)
-        } else if (row.adapter === 'anthropic') {
-          iterator = streamAnthropic(apiKey, apiModel, prepared, opts)
-        } else if (row.adapter === 'gemini') {
-          iterator = streamGemini(apiKey, apiModel, prepared, opts)
-        } else {
-          iterator = streamGlm(row.baseUrl!, apiKey, apiModel, prepared, opts)
-        }
+        const iterator = runAdapter(row, apiKey, apiModel, prepared, opts)
 
         for await (const delta of iterator) {
           sse(controller, { delta })

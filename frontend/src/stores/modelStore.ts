@@ -1,9 +1,13 @@
 import { create } from 'zustand'
-import type { ModelOption } from '../types'
-import { debugSidecarUrlContext, getSidecarBaseUrl } from '../lib/sidecarClient'
-import { loadAllApiKeys, saveApiKey } from '../lib/keychain'
+import type { CustomProvider, ModelOption } from '../types'
+import { getSidecarBaseUrl } from '../lib/sidecarClient'
+import { deleteApiKey, loadAllApiKeys, saveApiKey } from '../lib/keychain'
+
+const CUSTOM_PROVIDERS_KEY = 'custom_providers'
 
 interface ModelState {
+  builtInProviders: ModelOption[]
+  customProviders: CustomProvider[]
   providers: ModelOption[]
   apiKeys: Record<string, string>
   temperature: number
@@ -13,21 +17,104 @@ interface ModelState {
   setTemperature: (value: number) => void
   setMaxTokens: (value: number) => void
   refreshProviders: () => Promise<void>
+  addCustomProvider: (entry: CustomProvider, apiKey: string) => Promise<void>
+  updateCustomProvider: (
+    id: string,
+    entry: CustomProvider,
+    apiKey: string | null,
+  ) => Promise<void>
+  removeCustomProvider: (id: string) => Promise<void>
+  getCustomProvider: (id: string) => CustomProvider | undefined
 }
 
+function loadCustomProvidersFromStorage(): CustomProvider[] {
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_PROVIDERS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is CustomProvider => {
+      if (!item || typeof item !== 'object') return false
+      const row = item as Partial<CustomProvider>
+      return (
+        typeof row.id === 'string' &&
+        typeof row.name === 'string' &&
+        typeof row.provider === 'string' &&
+        typeof row.apiModel === 'string' &&
+        (row.adapter === 'openai' ||
+          row.adapter === 'anthropic' ||
+          row.adapter === 'gemini' ||
+          row.adapter === 'glm') &&
+        typeof row.contextWindow === 'number'
+      )
+    })
+  } catch {
+    return []
+  }
+}
+
+function saveCustomProvidersToStorage(list: CustomProvider[]): void {
+  try {
+    window.localStorage.setItem(CUSTOM_PROVIDERS_KEY, JSON.stringify(list))
+  } catch {
+    /* quota errors — ignore, keep in-memory copy */
+  }
+}
+
+function customToOption(entry: CustomProvider): ModelOption {
+  return {
+    id: entry.id,
+    name: entry.name,
+    provider: entry.provider,
+    contextWindow: entry.contextWindow,
+    isCustom: true,
+  }
+}
+
+function mergeProviders(
+  builtIn: ModelOption[],
+  custom: CustomProvider[],
+): ModelOption[] {
+  const seen = new Set<string>()
+  const merged: ModelOption[] = []
+  for (const option of builtIn) {
+    if (seen.has(option.id)) continue
+    seen.add(option.id)
+    merged.push(option)
+  }
+  for (const entry of custom) {
+    if (seen.has(entry.id)) continue
+    seen.add(entry.id)
+    merged.push(customToOption(entry))
+  }
+  return merged
+}
+
+const FALLBACK_BUILT_INS: ModelOption[] = [
+  { id: 'gpt-4o-mini', name: 'GPT-4o mini', provider: 'openai', contextWindow: 128000 },
+  { id: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet', provider: 'anthropic', contextWindow: 200000 },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'google', contextWindow: 1000000 },
+  { id: 'deepseek-chat', name: 'DeepSeek Chat', provider: 'deepseek', contextWindow: 128000 },
+  { id: 'qwen-max', name: 'Qwen Max', provider: 'qwen', contextWindow: 32000 },
+]
+
+const initialCustomProviders = loadCustomProvidersFromStorage()
+
 export const useModelStore = create<ModelState>((set, get) => ({
-  providers: [],
+  builtInProviders: [],
+  customProviders: initialCustomProviders,
+  providers: mergeProviders([], initialCustomProviders),
   apiKeys: {},
   temperature: 0.7,
   maxTokens: 4096,
 
   loadFromDisk: async () => {
-    const keys = await loadAllApiKeys()
+    const customProviderIds = get().customProviders.map((p) => p.provider)
+    const keys = await loadAllApiKeys(customProviderIds)
     set({ apiKeys: keys })
   },
 
   setApiKey: async (provider, value) => {
-    // Update in-memory state immediately so the key is usable even if persistence fails.
     set({ apiKeys: { ...get().apiKeys, [provider]: value } })
     try {
       await saveApiKey(provider, value)
@@ -41,93 +128,74 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   refreshProviders: async () => {
     try {
-      debugSidecarUrlContext()
       const base = getSidecarBaseUrl()
-      const url = `${base}/providers`
-      // #region agent log
-      fetch('http://127.0.0.1:7512/ingest/f6248b85-296f-4b29-9781-bbfe4782792f', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e13b60' },
-        body: JSON.stringify({
-          sessionId: 'e13b60',
-          runId: 'pre-fix',
-          hypothesisId: 'H1-H4',
-          location: 'modelStore.ts:refreshProviders:beforeFetch',
-          message: 'fetch /providers starting',
-          data: { url },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
-      const response = await fetch(url)
-      // #region agent log
-      fetch('http://127.0.0.1:7512/ingest/f6248b85-296f-4b29-9781-bbfe4782792f', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e13b60' },
-        body: JSON.stringify({
-          sessionId: 'e13b60',
-          runId: 'pre-fix',
-          hypothesisId: 'H1-H2',
-          location: 'modelStore.ts:refreshProviders:afterFetch',
-          message: 'fetch /providers response meta',
-          data: { ok: response.ok, status: response.status },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
+      const response = await fetch(`${base}/providers`)
       const data = (await response.json()) as {
         providers: { id: string; name: string; provider: string; contextWindow: number }[]
       }
-      const mapped: ModelOption[] = (data.providers ?? []).map((row) => ({
+      const builtIn: ModelOption[] = (data.providers ?? []).map((row) => ({
         id: row.id,
         name: row.name,
         provider: row.provider,
         contextWindow: row.contextWindow,
       }))
-      // #region agent log
-      fetch('http://127.0.0.1:7512/ingest/f6248b85-296f-4b29-9781-bbfe4782792f', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e13b60' },
-        body: JSON.stringify({
-          sessionId: 'e13b60',
-          runId: 'pre-fix',
-          hypothesisId: 'H1-H5',
-          location: 'modelStore.ts:refreshProviders:success',
-          message: 'providers mapped',
-          data: { rawProvidersLen: (data.providers ?? []).length, mappedLen: mapped.length },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
-      set({ providers: mapped })
-    } catch (e) {
-      // #region agent log
-      fetch('http://127.0.0.1:7512/ingest/f6248b85-296f-4b29-9781-bbfe4782792f', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'e13b60' },
-        body: JSON.stringify({
-          sessionId: 'e13b60',
-          runId: 'pre-fix',
-          hypothesisId: 'H1-H4',
-          location: 'modelStore.ts:refreshProviders:catch',
-          message: 'refreshProviders failed, using fallback',
-          data: {
-            errorName: e instanceof Error ? e.name : 'unknown',
-            errorMessage: e instanceof Error ? e.message : String(e),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
-      set({
-        providers: [
-          { id: 'gpt-4o-mini', name: 'GPT-4o mini', provider: 'openai', contextWindow: 128000 },
-          { id: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet', provider: 'anthropic', contextWindow: 200000 },
-          { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'google', contextWindow: 1000000 },
-          { id: 'deepseek-chat', name: 'DeepSeek Chat', provider: 'deepseek', contextWindow: 128000 },
-          { id: 'qwen-max', name: 'Qwen Max', provider: 'qwen', contextWindow: 32000 },
-        ],
-      })
+      set((state) => ({
+        builtInProviders: builtIn,
+        providers: mergeProviders(builtIn, state.customProviders),
+      }))
+    } catch {
+      set((state) => ({
+        builtInProviders: FALLBACK_BUILT_INS,
+        providers: mergeProviders(FALLBACK_BUILT_INS, state.customProviders),
+      }))
     }
   },
+
+  addCustomProvider: async (entry, apiKey) => {
+    const next = [...get().customProviders, entry]
+    saveCustomProvidersToStorage(next)
+    set((state) => ({
+      customProviders: next,
+      providers: mergeProviders(state.builtInProviders, next),
+    }))
+    if (apiKey) {
+      await get().setApiKey(entry.provider, apiKey)
+    }
+  },
+
+  updateCustomProvider: async (id, entry, apiKey) => {
+    const next = get().customProviders.map((p) => (p.id === id ? entry : p))
+    saveCustomProvidersToStorage(next)
+    set((state) => ({
+      customProviders: next,
+      providers: mergeProviders(state.builtInProviders, next),
+    }))
+    if (apiKey !== null) {
+      await get().setApiKey(entry.provider, apiKey)
+    }
+  },
+
+  removeCustomProvider: async (id) => {
+    const target = get().customProviders.find((p) => p.id === id)
+    const next = get().customProviders.filter((p) => p.id !== id)
+    saveCustomProvidersToStorage(next)
+    set((state) => {
+      const nextKeys = { ...state.apiKeys }
+      if (target) delete nextKeys[target.provider]
+      return {
+        customProviders: next,
+        providers: mergeProviders(state.builtInProviders, next),
+        apiKeys: nextKeys,
+      }
+    })
+    if (target) {
+      try {
+        await deleteApiKey(target.provider)
+      } catch {
+        /* ignore */
+      }
+    }
+  },
+
+  getCustomProvider: (id) => get().customProviders.find((p) => p.id === id),
 }))

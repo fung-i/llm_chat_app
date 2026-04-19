@@ -27,4 +27,10 @@ export interface StreamRequestBody {
   contextWindow?: number
   temperature?: number
   maxTokens?: number
+  /**
+   * Inline provider definition that takes precedence over the server-side
+   * registry lookup. Used to support user-defined custom models that are not
+   * shipped in providers.json.
+   */
+  providerOverride?: ProviderRow
 }

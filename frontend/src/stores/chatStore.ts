@@ -283,10 +283,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     let summary: string
     try {
+      const customProvider = modelStore.getCustomProvider(selectedModelId)
       summary = await summarizeRemote({
         messages: payload,
         apiKeys: modelStore.apiKeys,
         modelId: selectedModelId,
+        providerOverride: customProvider,
       })
     } catch (error) {
       set({
@@ -346,6 +348,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const providers = modelStore.providers
     const modelMeta = providers.find((item) => item.id === selectedModelId)
     const contextWindow = modelMeta?.contextWindow ?? 128000
+    const customProvider = modelStore.getCustomProvider(selectedModelId)
 
     try {
       await streamChat({
@@ -358,6 +361,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         contextWindow,
         temperature: modelStore.temperature,
         maxTokens: modelStore.maxTokens,
+        providerOverride: customProvider,
         onChunk: (chunk) => {
           if (chunk.type === 'error') {
             set({ error: chunk.error ?? 'Unknown streaming error' })

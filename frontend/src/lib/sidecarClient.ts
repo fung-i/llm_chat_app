@@ -1,10 +1,23 @@
-import type { ChatMessage } from '../types'
+import type { ChatMessage, CustomProvider } from '../types'
 import { buildInContextMessagesForApi } from './mergeSystem'
 
 export interface StreamChunk {
   type: 'delta' | 'done' | 'error'
   text?: string
   error?: string
+}
+
+/** Converts a CustomProvider (frontend schema) into the ProviderRow shape the sidecar expects. */
+function toProviderOverride(entry: CustomProvider) {
+  return {
+    id: entry.id,
+    name: entry.name,
+    provider: entry.provider,
+    adapter: entry.adapter,
+    baseUrl: entry.baseUrl,
+    apiModel: entry.apiModel,
+    contextWindow: entry.contextWindow,
+  }
 }
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8765'
@@ -53,6 +66,7 @@ export async function streamChat(params: {
   contextWindow: number
   temperature: number
   maxTokens: number
+  providerOverride?: CustomProvider
   onChunk: (chunk: StreamChunk) => void
 }): Promise<void> {
   const merged = buildInContextMessagesForApi(params.messages, params.systemSummarySlots)
@@ -68,6 +82,7 @@ export async function streamChat(params: {
     contextWindow: params.contextWindow,
     temperature: params.temperature,
     maxTokens: params.maxTokens,
+    providerOverride: params.providerOverride ? toProviderOverride(params.providerOverride) : undefined,
   }
 
   const response = await fetch(`${getSidecarBaseUrl()}/chat/stream`, {
@@ -138,6 +153,7 @@ export async function summarizeRemote(params: {
   messages: Pick<ChatMessage, 'role' | 'contextContent'>[]
   apiKeys: Record<string, string>
   modelId?: string
+  providerOverride?: CustomProvider
 }): Promise<string> {
   const response = await fetch(`${getSidecarBaseUrl()}/summarize`, {
     method: 'POST',
@@ -149,9 +165,31 @@ export async function summarizeRemote(params: {
       })),
       apiKeys: params.apiKeys,
       modelId: params.modelId,
+      providerOverride: params.providerOverride ? toProviderOverride(params.providerOverride) : undefined,
     }),
   })
   const data = (await response.json()) as { summary?: string; error?: string }
   if (data.error) throw new Error(data.error)
   return data.summary ?? ''
+}
+
+/**
+ * Run a minimal ping against the given provider to verify connectivity.
+ * Returns the first few characters received, or throws with the upstream error.
+ */
+export async function testProviderConnection(params: {
+  providerOverride: CustomProvider
+  apiKey: string
+}): Promise<string> {
+  const response = await fetch(`${getSidecarBaseUrl()}/providers/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      providerOverride: toProviderOverride(params.providerOverride),
+      apiKey: params.apiKey,
+    }),
+  })
+  const data = (await response.json()) as { ok?: boolean; error?: string; sample?: string }
+  if (!data.ok) throw new Error(data.error ?? 'Provider test failed.')
+  return data.sample ?? ''
 }

@@ -701,6 +701,125 @@
   padding: 8px;
 }
 
+.keyRow select {
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e5e7eb;
+  padding: 8px;
+}
+
+.keyRow input[type='number'] {
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #e5e7eb;
+  padding: 8px;
+}
+
+.customModelList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.customModelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  background: #0b1220;
+}
+
+.customModelInfo {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.customModelName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.customModelBadge {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #93c5fd;
+  background: #0f172a;
+}
+
+.customModelMeta {
+  font-size: 11px;
+  color: #9ca3af;
+  word-break: break-all;
+}
+
+.customModelMeta code {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.customModelActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.customModelActions button,
+.customModelFormActions button {
+  border: 1px solid #334155;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.customModelActions .deleteBtn {
+  color: #fca5a5;
+  border-color: #7f1d1d;
+}
+
+.customModelFormActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.customModelFormActions .primaryBtn {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.statusOk {
+  color: #86efac;
+}
+
+.statusWarn {
+  color: #fbbf24;
+}
+
+.modelOptionCustom {
+  color: #93c5fd;
+}
+
 @media (max-width: 980px) {
   .appShell {
     grid-template-columns: 1fr;

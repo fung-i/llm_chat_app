@@ -21,6 +21,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
           <option key={option.id} value={option.id}>
+            {option.isCustom ? '★ ' : ''}
             {option.name} ({option.provider})
           </option>
         ))}

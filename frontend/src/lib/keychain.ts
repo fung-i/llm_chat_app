@@ -67,12 +67,39 @@ export async function readApiKey(provider: string): Promise<string | null> {
   return new TextDecoder().decode(raw)
 }
 
-export async function loadAllApiKeys(): Promise<Record<string, string>> {
-  const providers = ['openai', 'anthropic', 'google', 'glm', 'deepseek', 'qwen', 'doubao', 'kimi']
+const BUILT_IN_PROVIDERS = [
+  'openai',
+  'anthropic',
+  'google',
+  'glm',
+  'deepseek',
+  'qwen',
+  'doubao',
+  'kimi',
+]
+
+export async function loadAllApiKeys(extraProviders: string[] = []): Promise<Record<string, string>> {
+  const seen = new Set<string>()
+  const providers = [...BUILT_IN_PROVIDERS, ...extraProviders].filter((p) => {
+    if (seen.has(p)) return false
+    seen.add(p)
+    return true
+  })
   const out: Record<string, string> = {}
   for (const provider of providers) {
     const value = await readApiKey(provider)
     if (value) out[provider] = value
   }
   return out
+}
+
+export async function deleteApiKey(provider: string): Promise<void> {
+  const pair = await getStore()
+  if (!pair) return
+  try {
+    await pair.store.remove(keyFor(provider))
+    await pair.vault.save()
+  } catch {
+    // non-existent keys are fine
+  }
 }

@@ -26,4 +26,23 @@ export interface ModelOption {
   name: string
   provider: string
   contextWindow: number
+  /** Marks user-defined models so the UI and send pipeline can treat them specially. */
+  isCustom?: boolean
+}
+
+export type CustomAdapter = 'openai' | 'anthropic' | 'gemini' | 'glm'
+
+/**
+ * User-defined model. Stored locally (localStorage + keychain for api keys) and
+ * sent inline to the sidecar via `providerOverride` rather than being registered
+ * in providers.json. Shape mirrors sidecar's ProviderRow.
+ */
+export interface CustomProvider {
+  id: string
+  name: string
+  provider: string
+  adapter: CustomAdapter
+  apiModel: string
+  baseUrl?: string
+  contextWindow: number
 }

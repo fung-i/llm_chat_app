@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConversationPane, type PaneHandle } from './components/ConversationPane'
 import { ContextPane } from './components/ContextPane'
+import { CustomModelManager } from './components/CustomModelManager'
 import { MessageInput } from './components/MessageInput'
 import { ModelSelector } from './components/ModelSelector'
 import { ModelSettings } from './components/ModelSettings'
@@ -13,6 +14,7 @@ import './App.css'
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [customModelsOpen, setCustomModelsOpen] = useState(false)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
   const convPaneRef = useRef<PaneHandle>(null)
   const ctxPaneRef = useRef<PaneHandle>(null)
@@ -173,6 +175,9 @@ function App() {
             >
               撤回 {historyDepth > 0 ? `(${historyDepth})` : ''}
             </button>
+            <button type="button" className="ghostButton" onClick={() => setCustomModelsOpen(true)}>
+              自定义模型
+            </button>
             <button type="button" className="ghostButton" onClick={() => setSettingsOpen(true)}>
               密钥与参数
             </button>
@@ -213,6 +218,9 @@ function App() {
       </div>
 
       <ModelSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {customModelsOpen && (
+        <CustomModelManager onClose={() => setCustomModelsOpen(false)} />
+      )}
     </main>
   )
 }
