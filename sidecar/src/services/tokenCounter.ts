@@ -1,12 +1,12 @@
-import { get_encoding } from '@dqbd/tiktoken'
+import { getEncoding, type Tiktoken } from 'js-tiktoken'
 import type { ChatMessageDto } from '../types'
 
-let encoder: ReturnType<typeof get_encoding> | null = null
+let encoder: Tiktoken | null = null
 
-function getEncoder(): ReturnType<typeof get_encoding> | null {
+function getEncoder(): Tiktoken | null {
   if (encoder) return encoder
   try {
-    encoder = get_encoding('cl100k_base')
+    encoder = getEncoding('cl100k_base')
     return encoder
   } catch {
     return null
