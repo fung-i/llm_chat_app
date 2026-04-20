@@ -16,8 +16,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         ]
 
   return (
-    <label className="modelSelector">
-      模型
+    <label className="modelSelector" title="当前对话使用的模型">
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
           <option key={option.id} value={option.id}>

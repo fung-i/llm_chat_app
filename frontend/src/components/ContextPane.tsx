@@ -10,6 +10,7 @@ import {
 import type { ChatMessage, MessageRole } from '../types'
 import { countTokensRemote } from '../lib/sidecarClient'
 import { buildInContextMessagesForApi } from '../lib/mergeSystem'
+import { previewContent, shouldCollapse } from '../lib/collapse'
 import type { PaneHandle } from './ConversationPane'
 import { MessageContent } from './MessageContent'
 
@@ -62,6 +63,8 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
   const [remoteTokens, setRemoteTokens] = useState<number | null>(null)
   const [summarizing, setSummarizing] = useState(false)
   const [editingMap, setEditingMap] = useState<Record<string, boolean>>({})
+  const [systemStripOpen, setSystemStripOpen] = useState(false)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const isEditing = (m: ChatMessage) => editingMap[m.id] ?? m.role === 'user'
 
@@ -198,82 +201,117 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
 
   const baseSystemSelected = baseSystemMessage && baseSystemMessage.id === selectedMessageId
 
+  const systemItemCount = (baseSystemMessage ? 1 : 0) + systemSummarySlots.length
+
   return (
-    <section className="pane">
+    <section className="pane contextPane">
       <header className="paneHeader">
         <h2>实际发送上下文</h2>
-        <span className={danger ? 'tokenDanger' : warn ? 'tokenWarn' : ''}>
-          Token {tokenCount} / {maxContextWindow}
-          {remoteTokens != null ? '（服务端）' : '（估算）'}
+        <span className={`paneHeaderMeta ${danger ? 'tokenDanger' : warn ? 'tokenWarn' : ''}`}>
+          {tokenCount.toLocaleString()} / {maxContextWindow.toLocaleString()} ·{' '}
+          {remoteTokens != null ? '服务端' : '估算'}
         </span>
       </header>
 
-      <div className={`tokenBar ${warn ? 'tokenBarWarn' : ''} ${danger ? 'tokenBarDanger' : ''}`}>
-        <span style={{ width: `${ratio}%` }} />
+      <div className="tokenBarWrap">
+        <div className={`tokenBar ${warn ? 'tokenBarWarn' : ''} ${danger ? 'tokenBarDanger' : ''}`}>
+          <span style={{ width: `${ratio}%` }} />
+        </div>
       </div>
 
       <div className="systemStrip">
-        <p className="systemStripHint">
-          System 区：基础人设与多段摘要分栏编辑；发送时按栏顺序用分隔线拼成一条 system。摘要所选/全文后，对应消息仅从「在上下文」中移除（可点恢复）。
-        </p>
-        <div className="systemColumns">
-          {baseSystemMessage ? (
-            <div
-              className={`systemColumn ${baseSystemSelected ? 'messageSelected' : ''}`}
-              onClick={() => onSelectMessage(baseSystemMessage.id)}
-            >
-              <div className="systemColumnHead">
-                <label className="summaryPick" onClick={(event) => event.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={pickForSummary[baseSystemMessage.id] ?? false}
-                    onChange={() =>
-                      setPickForSummary((p) => ({
-                        ...p,
-                        [baseSystemMessage.id]: !p[baseSystemMessage.id],
-                      }))
-                    }
+        <button
+          type="button"
+          className="systemStripToggle"
+          onClick={() => setSystemStripOpen((v) => !v)}
+          aria-expanded={systemStripOpen}
+        >
+          <span className="systemStripToggleLeft">
+            <span className={`systemStripChevron ${systemStripOpen ? 'open' : ''}`}>▸</span>
+            <span>System 区</span>
+            <span className="systemStripCount">
+              · {baseSystemMessage ? '基础' : '未设基础'}
+              {systemSummarySlots.length > 0 ? ` · ${systemSummarySlots.length} 段摘要` : ''}
+            </span>
+          </span>
+          <span className="systemStripCount">{systemStripOpen ? '收起' : '展开编辑'}</span>
+        </button>
+        {systemStripOpen && (
+          <div className="systemStripInner">
+            <p className="systemStripHint">
+              基础人设与多段摘要分栏编辑；发送时按栏顺序用分隔线拼成一条 system。摘要所选/全文后，对应消息仅从「在上下文」中移除（可点恢复）。
+            </p>
+            <div className="systemColumns">
+              {baseSystemMessage ? (
+                <div
+                  className={`systemColumn ${baseSystemSelected ? 'messageSelected' : ''}`}
+                  onClick={() => onSelectMessage(baseSystemMessage.id)}
+                >
+                  <div className="systemColumnHead">
+                    <label className="summaryPick" onClick={(event) => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={pickForSummary[baseSystemMessage.id] ?? false}
+                        onChange={() =>
+                          setPickForSummary((p) => ({
+                            ...p,
+                            [baseSystemMessage.id]: !p[baseSystemMessage.id],
+                          }))
+                        }
+                      />
+                      <span>基础 System</span>
+                    </label>
+                  </div>
+                  <textarea
+                    value={baseSystemMessage.contextContent}
+                    onFocus={() => {
+                      onSelectMessage(baseSystemMessage.id)
+                      onBeforeEdit('编辑 System')
+                    }}
+                    onChange={(event) => onEdit(baseSystemMessage.id, event.target.value)}
+                    onBlur={onPersist}
                   />
-                  <span>基础 System</span>
-                </label>
-              </div>
-              <textarea
-                value={baseSystemMessage.contextContent}
-                onFocus={() => {
-                  onSelectMessage(baseSystemMessage.id)
-                  onBeforeEdit('编辑 System')
-                }}
-                onChange={(event) => onEdit(baseSystemMessage.id, event.target.value)}
-                onBlur={onPersist}
-              />
+                </div>
+              ) : null}
+              {systemSummarySlots.map((slot, index) => (
+                <div key={index} className="systemColumn">
+                  <div className="systemColumnHead">
+                    <span>摘要 {index + 1}</span>
+                  </div>
+                  <textarea
+                    value={slot}
+                    onFocus={() => onBeforeEdit('编辑摘要')}
+                    onChange={(event) => onUpdateSummarySlot(index, event.target.value)}
+                    onBlur={onPersist}
+                  />
+                </div>
+              ))}
+              {systemItemCount === 0 ? (
+                <p className="systemStripHint">
+                  暂无基础 System 或摘要。下方「摘要所选 / 摘要完整对话」可自动生成。
+                </p>
+              ) : null}
             </div>
-          ) : null}
-          {systemSummarySlots.map((slot, index) => (
-            <div key={index} className="systemColumn">
-              <div className="systemColumnHead">
-                <span>摘要 {index + 1}</span>
-              </div>
-              <textarea
-                value={slot}
-                onFocus={() => onBeforeEdit('编辑摘要')}
-                onChange={(event) => onUpdateSummarySlot(index, event.target.value)}
-                onBlur={onPersist}
-              />
-            </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="messageList" ref={listRef} onScroll={handleScroll}>
         {restMessages.map((message) => {
           const isSelected = message.id === selectedMessageId
           const editing = isEditing(message)
+          const collapsible = !editing && shouldCollapse(message.contextContent)
+          const isExpanded = expanded[message.id] ?? !collapsible
+          const fullyShown = isExpanded || !collapsible
+          const previewText = fullyShown
+            ? message.contextContent
+            : previewContent(message.contextContent)
           return (
             <article
               key={message.id}
               ref={setCardRef(message.id)}
               data-message-id={message.id}
-              className={`messageCard contextCard ${isSelected ? 'messageSelected' : ''}`}
+              className={`messageCard contextCard role-${message.role} ${isSelected ? 'messageSelected' : ''}`}
               onClick={() => onSelectMessage(message.id)}
             >
               <div className="messageMeta">
@@ -288,9 +326,28 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
                       }))
                     }
                   />
-                  <strong>{message.role}</strong>
+                  <span className="messageBadge">
+                    <span className="dot" />
+                    {message.role === 'assistant'
+                      ? 'Assistant'
+                      : message.role === 'system'
+                      ? 'System'
+                      : 'User'}
+                  </span>
                 </label>
                 <div className="messageMetaActions">
+                  {collapsible && (
+                    <button
+                      type="button"
+                      className="collapseToggle"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setExpanded((prev) => ({ ...prev, [message.id]: !isExpanded }))
+                      }}
+                    >
+                      {isExpanded ? '收起' : '展开全部'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="messageActionBtn"
@@ -323,8 +380,10 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
                   onChange={(event) => onEdit(message.id, event.target.value)}
                   onBlur={onPersist}
                 />
-              ) : (
+              ) : fullyShown ? (
                 <MessageContent text={message.contextContent} streamSafe={false} />
+              ) : (
+                <p className="messagePreview">{previewText}</p>
               )}
             </article>
           )

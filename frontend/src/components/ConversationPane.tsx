@@ -9,11 +9,7 @@ import {
 } from 'react'
 import type { ChatMessage } from '../types'
 import { MessageContent } from './MessageContent'
-
-const COLLAPSE_LINE_THRESHOLD = 12
-const COLLAPSE_CHAR_THRESHOLD = 600
-const PREVIEW_LINES = 3
-const PREVIEW_CHARS = 220
+import { previewContent, shouldCollapse } from '../lib/collapse'
 
 export interface PaneHandle {
   scrollToMessage: (id: string, opts?: { smooth?: boolean }) => boolean
@@ -34,22 +30,13 @@ function roleLabel(role: ChatMessage['role']): string {
   return 'User'
 }
 
-function shouldCollapse(content: string): boolean {
-  if (!content) return false
-  if (content.length > COLLAPSE_CHAR_THRESHOLD) return true
-  let lineCount = 1
-  for (let i = 0; i < content.length; i++) {
-    if (content.charCodeAt(i) === 10) {
-      lineCount++
-      if (lineCount > COLLAPSE_LINE_THRESHOLD) return true
-    }
-  }
-  return false
-}
-
-function previewContent(content: string): string {
-  const lines = content.split('\n').slice(0, PREVIEW_LINES).join('\n')
-  return lines.length > PREVIEW_CHARS ? `${lines.slice(0, PREVIEW_CHARS)}…` : lines
+function RoleBadge({ role }: { role: ChatMessage['role'] }) {
+  return (
+    <span className="messageBadge">
+      <span className="dot" />
+      {roleLabel(role)}
+    </span>
+  )
 }
 
 export const ConversationPane = forwardRef<PaneHandle, ConversationPaneProps>(function ConversationPane(
@@ -131,7 +118,7 @@ export const ConversationPane = forwardRef<PaneHandle, ConversationPaneProps>(fu
     <section className="pane">
       <header className="paneHeader">
         <h2>真实对话</h2>
-        <span>{messages.length} 条消息</span>
+        <span className="paneHeaderMeta">{messages.length} 条消息</span>
       </header>
 
       <div className="messageList" ref={listRef} onScroll={handleScroll}>
@@ -162,7 +149,7 @@ export const ConversationPane = forwardRef<PaneHandle, ConversationPaneProps>(fu
               onClick={() => onSelectMessage(message.id)}
             >
               <div className="messageMeta">
-                <strong>{roleLabel(message.role)}</strong>
+                <RoleBadge role={message.role} />
                 {!message.inContext && <em>已从上下文移除</em>}
                 {message.isContextModified && message.inContext && <em>上下文已改写</em>}
                 <div className="messageMetaActions">
