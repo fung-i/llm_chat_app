@@ -105,7 +105,16 @@ npm run build:desktop
 
 ### Sidecar 起不来 / 模型列表只有兜底几项
 
-- 安装后 **模型列表很少**、**8765 无监听**：多为 Sidecar 未启动，常与 **Bun compile + macOS 签名** 有关 → [macos-sidecar-bun.md](./macos-sidecar-bun.md)。
+安装后 **模型列表很少**、底栏 **`Load failed`**、**8765 无监听**——根因都是 sidecar 子进程没活下来。**先在终端直接跑** `"$APP/Contents/MacOS/llm-sidecar"`，按它的输出分诊：
+
+| 终端表现 | 大概率原因 | 处理 |
+|------|------|------|
+| `zsh: killed`（瞬间退出，无日志） | macOS 上用了 **Bun 1.3.12** 编 sidecar，产物 Mach-O / 签名布局有误被 SIGKILL | [macos-sidecar-bun.md → A](./macos-sidecar-bun.md#a-bun-1312-编出的不可签名二进制) |
+| `error: Missing xxx_bg.wasm` / `Cannot find module 'xxx.node'` 后退出 | 依赖带 **wasm/native 副产物**，`bun build --compile` 没把这些资源塞进单文件 `/$bunfs/root/` | [macos-sidecar-bun.md → B](./macos-sidecar-bun.md#b-依赖带-wasmnative-副产物bun-compile-没打进单文件) |
+| `Permission denied` / `Bad CPU type in executable` | 隔离属性没清干净，或装错了架构（Intel 装 arm64 包 / 反之） | `xattr -cr "$APP"`；架构对不上就重打或换 release |
+| 正常打印 `SIDECAR_READY:8765` 并卡住 | 二进制本身 OK，但 App 里仍取不到 → 多半是端口被占 | 见下方"重编 Sidecar 后 HTTP 仍是旧模型列表"清旧进程 |
+
+> **不要只用 `open` 双击调试**：spawn 失败的 `eprintln!` 进不到终端。从命令行起 `Contents/MacOS/llm-chat-app` 和 `Contents/MacOS/llm-sidecar`，分诊一眼到位。
 
 ### 改了 `providers.json` 但界面没有新模型
 
