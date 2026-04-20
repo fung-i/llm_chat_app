@@ -147,58 +147,39 @@ function App() {
 
       <div className="appMain">
         <header className="topBar">
-          <div className="topBarTitle">
-            <h1>{conversation.title || '未命名对话'}</h1>
-            <div className="topBarMeta">
-              <span>{modelMeta?.name ?? selectedModelId}</span>
-              <span className="dot" />
-              <span>上下文 {maxContextWindow.toLocaleString()}</span>
-              <span className="dot" />
-              <span>{messages.length} 条消息</span>
-            </div>
+          <div>
+            <h1>{conversation.title}</h1>
+            <p>双栏上下文 · 手动 / 自动裁剪 / 摘要</p>
           </div>
           <div className="topBarActions">
-            <ModelSelector value={selectedModelId} onChange={setSelectedModel} />
             <label className="strategySelect">
+              上下文策略
               <select
                 value={conversation.contextStrategy}
                 onChange={(event) =>
                   setContextStrategy(event.target.value as typeof conversation.contextStrategy)
                 }
-                title="上下文策略"
               >
-                <option value="manual">manual · 手动</option>
-                <option value="auto_trim">auto_trim · 自动裁剪</option>
-                <option value="summarize">summarize · 摘要</option>
+                <option value="manual">manual</option>
+                <option value="auto_trim">auto_trim</option>
+                <option value="summarize">summarize</option>
               </select>
             </label>
+            <ModelSelector value={selectedModelId} onChange={setSelectedModel} />
             <button
               type="button"
-              className="ghostButton iconOnly"
+              className="ghostButton"
               disabled={historyDepth === 0 || isStreaming}
               onClick={() => undo()}
-              title={`撤回上一次操作${historyDepth > 0 ? `（${historyDepth}）` : ''}`}
-              aria-label="撤回"
+              title="撤回上一次移除/摘要/修改/添加/删除"
             >
-              ↶
+              撤回 {historyDepth > 0 ? `(${historyDepth})` : ''}
             </button>
-            <button
-              type="button"
-              className="ghostButton iconOnly"
-              onClick={() => setCustomModelsOpen(true)}
-              title="自定义模型"
-              aria-label="自定义模型"
-            >
-              ★
+            <button type="button" className="ghostButton" onClick={() => setCustomModelsOpen(true)}>
+              自定义模型
             </button>
-            <button
-              type="button"
-              className="ghostButton iconOnly"
-              onClick={() => setSettingsOpen(true)}
-              title="密钥与参数"
-              aria-label="密钥与参数"
-            >
-              ⚙
+            <button type="button" className="ghostButton" onClick={() => setSettingsOpen(true)}>
+              密钥与参数
             </button>
           </div>
         </header>
