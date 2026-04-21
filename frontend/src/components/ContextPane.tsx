@@ -10,6 +10,7 @@ import {
 import type { ChatMessage, MessageRole } from '../types'
 import { countTokensRemote } from '../lib/sidecarClient'
 import { buildInContextMessagesForApi } from '../lib/mergeSystem'
+import { previewContent, shouldCollapse } from '../lib/collapse'
 import type { PaneHandle } from './ConversationPane'
 import { MessageContent } from './MessageContent'
 
@@ -62,8 +63,10 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
   const [remoteTokens, setRemoteTokens] = useState<number | null>(null)
   const [summarizing, setSummarizing] = useState(false)
   const [editingMap, setEditingMap] = useState<Record<string, boolean>>({})
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const isEditing = (m: ChatMessage) => editingMap[m.id] ?? m.role === 'user'
+  const lastRestId = restMessages[restMessages.length - 1]?.id ?? null
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map())
@@ -268,6 +271,10 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
         {restMessages.map((message) => {
           const isSelected = message.id === selectedMessageId
           const editing = isEditing(message)
+          const isLast = message.id === lastRestId
+          const collapsible = !editing && !isLast && shouldCollapse(message.contextContent)
+          const isExpanded = expanded[message.id] ?? !collapsible
+          const fullyShown = !collapsible || isExpanded
           return (
             <article
               key={message.id}
@@ -291,6 +298,18 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
                   <strong>{message.role}</strong>
                 </label>
                 <div className="messageMetaActions">
+                  {collapsible && (
+                    <button
+                      type="button"
+                      className="collapseToggle"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setExpanded((prev) => ({ ...prev, [message.id]: !isExpanded }))
+                      }}
+                    >
+                      {isExpanded ? '收起' : '展开全部'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="messageActionBtn"
@@ -323,8 +342,10 @@ export const ContextPane = forwardRef<PaneHandle, ContextPaneProps>(function Con
                   onChange={(event) => onEdit(message.id, event.target.value)}
                   onBlur={onPersist}
                 />
-              ) : (
+              ) : fullyShown ? (
                 <MessageContent text={message.contextContent} streamSafe={false} />
+              ) : (
+                <p className="messagePreview">{previewContent(message.contextContent)}</p>
               )}
             </article>
           )
